@@ -1,0 +1,148 @@
+name: Build Windows only
+
+# 只编译 Windows 客户端（红果鉴 / 真果鉴两版），独立工作流，避免全平台矩阵的复杂性。
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: '选择要编译的版本（both=两版都编，其余只编所选版本）'
+        type: choice
+        options:
+          - both
+          - hongguojian
+          - zhenguojian
+        default: both
+      publish_release:
+        description: '编译完成后是否发布 GitHub Release（可直接下载）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: win-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOPROXY: https://proxy.golang.org,direct
+  GOSUMDB: sum.golang.org
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+
+      # 确保 Flutter 启用 Windows 桌面目标（README 要求的 Windows 构建前提）。
+      - name: Enable Windows desktop (best-effort)
+        continue-on-error: true
+        run: flutter config --enable-windows-desktop
+
+      # windows-latest 自带 MSYS2 的 MinGW-w64，构建原生 duanju_core.dll 需要 gcc；
+      # 显式加入 PATH 以防默认环境未暴露 mingw64 的 bin 目录。
+      - name: Ensure MinGW-w64 (gcc) is on PATH
+        shell: bash
+        run: echo "C:/msys64/mingw64/bin" >> "$GITHUB_PATH"
+
+      # 两版各自一个步骤，用 step 级 if（基于 inputs.edition，与 push/PR 事件兼容）控制是否编译，
+      # 不依赖动态矩阵，避免 job 级 if 引用 matrix 导致工作流校验失败。
+      - name: Build 红果鉴 (hongguojian)
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.edition == 'both' ||
+          inputs.edition == 'hongguojian'
+        run: python scripts/build_windows.py
+
+      - name: Build 真果鉴 (zhenguojian)
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.edition == 'both' ||
+          inputs.edition == 'zhenguojian'
+        run: python scripts/build_windows.py --all-sources
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [build-windows]
+    # 推送 main/master 或 v* 标签时自动发版；手动触发时按 publish_release 开关决定是否发版。
+    # PR 不会发布 Release。
+    if: >-
+      always() &&
+      needs.build-windows.result == 'success' &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: 生成发布文件清单
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)
+          mkdir -p release
+          for directory in artifacts/*/; do
+            for file in "$directory"*; do
+              [ -f "$file" ] || continue
+              name=$(basename "$file")
+              [ "$name" = "SHA256SUMS.txt" ] && continue
+              cp "$file" "release/$name"
+            done
+          done
+          cd release
+          mapfile -t files < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)
+          tag="windows-v${version//+/-}"
+          {
+            printf '%s\n\n' "版本 ${version}（Windows 客户端，解压后运行 hongguojian.exe 或 zhenguojian.exe）："
+            printf '%s\n' "- *-windows-x64.zip：Windows 10/11 x64 完整包"
+            printf '%s\n' "- 红果鉴 hongguojian：仅红果站源"
+            printf '%s\n' "- 真果鉴 zhenguojian：全部站源"
+            printf '\n%s\n' "校验：SHA256SUMS.txt"
+          } > notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" release/* --clobber
+            gh release edit "$tag" --title "红果鉴 / 真果鉴 ${version} (Windows)" --notes-file notes.md
+          else
+            gh release create "$tag" release/* --title "红果鉴 / 真果鉴 ${version} (Windows)" --notes-file notes.md
+          fi

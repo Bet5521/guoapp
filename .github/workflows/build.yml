@@ -66,11 +66,8 @@ jobs:
         continue-on-error: true
 
   android:
-    # 手动触发时按 workflow_dispatch 的 edition 输入只编所选版本；push/PR 等其它触发两版都编。
-    if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.edition == 'both' ||
-      github.event.inputs.edition == matrix.edition
+    # 矩阵固定两版都生成任务；"只编所选版本"通过 step 级 if（允许用 matrix 上下文）控制，
+    # 避免 job 级 if 引用 matrix 导致整个工作流校验失败（GitHub 不允许 job 级 if 用 matrix）。
     needs: [checks]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -121,7 +118,13 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      - run: python scripts/build_android.py ${{ matrix.arguments }}
+      - name: Build Android client
+        # 手动触发且未选本版本时跳过构建（任务仍 success，不破坏 release 依赖）
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          github.event.inputs.edition == 'both' ||
+          github.event.inputs.edition == matrix.edition
+        run: python scripts/build_android.py ${{ matrix.arguments }}
       - name: 校验 APK 签名证书
         if: steps.signing.outputs.release == 'true'
         shell: bash
@@ -152,17 +155,17 @@ jobs:
         if: always()
         run: python scripts/configure_signing.py --clean
       - uses: actions/upload-artifact@v4
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          github.event.inputs.edition == 'both' ||
+          github.event.inputs.edition == matrix.edition
         with:
           name: ${{ matrix.edition }}-android
           path: dist/android/*
           if-no-files-found: error
           retention-days: 14
   windows:
-    # 手动触发时按 workflow_dispatch 的 edition 输入只编所选版本；push/PR 等其它触发两版都编。
-    if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.edition == 'both' ||
-      github.event.inputs.edition == matrix.edition
+    # 矩阵固定两版都生成任务；"只编所选版本"通过 step 级 if（允许用 matrix 上下文）控制。
     needs: [checks]
     runs-on: windows-latest
     timeout-minutes: 60
@@ -198,8 +201,17 @@ jobs:
         shell: bash
         run: echo "C:/msys64/mingw64/bin" >> "$GITHUB_PATH"
       - name: Build Windows client
+        # 手动触发且未选本版本时跳过构建（任务仍 success，不破坏 release 依赖）
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          github.event.inputs.edition == 'both' ||
+          github.event.inputs.edition == matrix.edition
         run: python scripts/build_windows.py ${{ matrix.arguments }}
       - name: Upload Windows artifact
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          github.event.inputs.edition == 'both' ||
+          github.event.inputs.edition == matrix.edition
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.edition }}-windows
