@@ -24,7 +24,11 @@ with china_mirror_environment(environment, options.cn_mirrors, gradle=False) as 
     with mirrored_pub_lockfile(root, env):
         subprocess.run([sys.executable, str(root / 'scripts' / 'build_native.py'), '--platform', 'windows', *variant.arguments],
                        cwd=root, env=env, check=True)
-        subprocess.run([flutter, 'pub', 'get', '--enforce-lockfile'], cwd=root, env=env, check=True)
+        # 不用 --enforce-lockfile：提交的 pubspec.lock 在 Windows 平台上无法严格满足
+        # pubspec.yaml（含 Windows 专属 path 依赖 media_kit_libs_windows_video 等），
+        # 强制校验会直接失败（退出码 65）。与 build_android.py 保持一致，由 pub get 自行
+        # 解析/刷新锁文件，避免跨平台锁文件不一致导致 CI 失败。
+        subprocess.run([flutter, 'pub', 'get'], cwd=root, env=env, check=True)
         subprocess.run([flutter, 'build', 'windows', '--release', '--no-pub', *variant.flutter_arguments], cwd=root, env=env, check=True)
         subprocess.run([sys.executable, str(root / 'scripts' / 'package_release.py'), '--platform', 'windows', *variant.arguments],
                        cwd=root, env=env, check=True)
