@@ -76,15 +76,18 @@ Flutter 多端独立短剧 / 影视应用，原名「短剧库 APP」。站源�
 
 ### GitHub Actions
 
-推送 `main` / `master`、`v*` 标签、提交 PR，或手动运行 **Build app packages**，会先检查再构建两版（默认与 `--all-sources`）：
+推送 `main` / `master`、`v*` 标签或提交 PR 时，会先检查再构建两版（红果鉴 / 真果鉴）。也可手动运行 **Build app packages**，通过输入项选择：
+
+- `edition`：要编译的版本，`both`（默认，两版都编）/ `hongguojian`（仅红果鉴）/ `zhenguojian`（仅真果鉴）。
+- `publish_release`：编译完成后是否发布 GitHub Release（默认开启）；关闭则只保留本次运行的产物，可在 Actions 运行页临时下载，不创建 Release。
 
 | 产物 | 内容 |
 | --- | --- |
 | `*-android` | 三种架构 APK 和 SHA256 |
 | `*-windows` | 完整 ZIP 和 SHA256 |
-| `*-ios-unsigned` | 未签名 `.app` ZIP 和 SHA256，不能直接当已签名 IPA 安装 |
+| `*-ios-unsigned` | 未签名 `.app` ZIP 和 SHA256，不能直接当已签名 IPA 安装（iOS 任务当前未启用） |
 
-推送 `main` 且 android / ios / windows 全部构建成功时，自动创建 / 更新 GitHub Release（tag `app-v{version}`）。发布新版本前需先在 `pubspec.yaml` 提升 `version`，否则会覆盖同名 tag 的 Release。
+推送 `main` / `master` 或 `v*` 标签，且 android、windows 全部构建成功时，自动创建 / 更新 GitHub Release（tag `app-v{version}`）；iOS 任务当前未启用（ci 中 `if: false`）。手动触发时按 `publish_release` 开关决定是否发版；PR 不会发布 Release。发布新版本前需先在 `pubspec.yaml` 提升 `version`，否则会覆盖同名 tag 的 Release。
 
 Android 正式发布使用同一签名并递增构建号，在仓库 Secrets 配置：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。未配置时生成 debug 签名预览包。
 
