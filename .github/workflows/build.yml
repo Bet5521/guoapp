@@ -65,35 +65,23 @@ jobs:
         working-directory: native
         continue-on-error: true
 
-  setup:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      matrix: ${{ steps.matrix.outputs.value }}
-    steps:
-      - id: matrix
-        shell: bash
-        run: |
-          # 手动触发时按 workflow_dispatch 输入选择版本；push/PR 等其它触发默认两版都编。
-          case "${{ github.event.inputs.edition }}" in
-            hongguojian)
-              echo 'value=[{"edition":"hongguojian","arguments":""}]' >> "$GITHUB_OUTPUT"
-              ;;
-            zhenguojian)
-              echo 'value=[{"edition":"zhenguojian","arguments":"--all-sources"}]' >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo 'value=[{"edition":"hongguojian","arguments":""},{"edition":"zhenguojian","arguments":"--all-sources"}]' >> "$GITHUB_OUTPUT"
-              ;;
-          esac
-
   android:
-    needs: [checks, setup]
+    # 手动触发时按 workflow_dispatch 的 edition 输入只编所选版本；push/PR 等其它触发两版都编。
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.edition == 'both' ||
+      github.event.inputs.edition == matrix.edition
+    needs: [checks]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+      matrix:
+        include:
+          - edition: hongguojian
+            arguments: ''
+          - edition: zhenguojian
+            arguments: '--all-sources'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -170,12 +158,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   windows:
-    needs: [checks, setup]
+    # 手动触发时按 workflow_dispatch 的 edition 输入只编所选版本；push/PR 等其它触发两版都编。
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.edition == 'both' ||
+      github.event.inputs.edition == matrix.edition
+    needs: [checks]
     runs-on: windows-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+      matrix:
+        include:
+          - edition: hongguojian
+            arguments: ''
+          - edition: zhenguojian
+            arguments: '--all-sources'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
