@@ -164,6 +164,10 @@ jobs:
           flutter-version: '3.47.4'
           channel: stable
           cache: true
+      # 确保 Flutter 启用 Windows 桌面目标（README 要求的 Windows 构建前提）。
+      - name: Enable Windows desktop (best-effort)
+        continue-on-error: true
+        run: flutter config --enable-windows-desktop
       # windows-latest 自带 MSYS2 的 MinGW-w64，构建原生 duanju_core.dll 需要 gcc；
       # 显式加入 PATH 以防默认环境未暴露 mingw64 的 bin 目录。
       - name: Ensure MinGW-w64 (gcc) is on PATH
